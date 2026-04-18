@@ -1,35 +1,37 @@
 const path = require('path');
-const { loadSessions, saveSessions, ensureDir } = require('../session/store');
+const fs = require('fs-extra');
+const os = require('os');
 
-const HISTORY_FILE = path.join(process.env.HOME || process.env.USERPROFILE, '.tabswitch', 'history.json');
+const HISTORY_FILE = path.join(os.homedir(), '.tabswitch', 'history.json');
+const MAX_HISTORY = 100;
+
+async function ensureFile() {
+  await fs.ensureFile(HISTORY_FILE);
+  const content = await fs.readFile(HISTORY_FILE, 'utf8').catch(() => '');
+  if (!content.trim()) await fs.writeJson(HISTORY_FILE, []);
+}
 
 async function loadHistory() {
-  try {
-    await ensureDir();
-    const data = require('fs').existsSync(HISTORY_FILE)
-      ? JSON.parse(require('fs').readFileSync(HISTORY_FILE, 'utf8'))
-      : [];
-    return data;
-  } catch {
-    return [];
-  }
+  await ensureFile();
+  return fs.readJson(HISTORY_FILE).catch(() => []);
 }
 
 async function saveHistory(history) {
-  await ensureDir();
-  require('fs').writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
+  await ensureFile();
+  await fs.writeJson(HISTORY_FILE, history, { spaces: 2 });
 }
 
-async function recordOpen(sessionName, urls) {
+async function recordOpen(sessionName, urls = []) {
   const history = await loadHistory();
-  history.unshift({
+  const entry = {
     sessionName,
     urls,
     openedAt: new Date().toISOString()
-  });
-  const trimmed = history.slice(0, 100);
+  };
+  history.unshift(entry);
+  const trimmed = history.slice(0, MAX_HISTORY);
   await saveHistory(trimmed);
-  return trimmed[0];
+  return entry;
 }
 
 async function getHistory(limit = 20) {
@@ -43,7 +45,7 @@ async function clearHistory() {
 
 async function getSessionHistory(sessionName) {
   const history = await loadHistory();
-  return history.filter(entry => entry.sessionName === sessionName);
+  return history.filter(e => e.sessionName === sessionName);
 }
 
 module.exports = { recordOpen, getHistory, clearHistory, getSessionHistory };
