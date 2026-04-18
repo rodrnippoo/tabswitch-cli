@@ -2,35 +2,29 @@ const fs = require('fs');
 const path = require('path');
 const { loadSessions } = require('../session/store');
 
-/**
- * Export sessions to a JSON file
- */
-async function exportSessions(outputPath) {
+async function exportSessions(outputPath, options = {}) {
   const sessions = await loadSessions();
-  const data = {
-    exportedAt: new Date().toISOString(),
+
+  if (!sessions || Object.keys(sessions).length === 0) {
+    throw new Error('No sessions found to export.');
+  }
+
+  const exportData = {
     version: 1,
+    exportedAt: new Date().toISOString(),
     sessions,
   };
-  const resolved = path.resolve(outputPath);
-  fs.writeFileSync(resolved, JSON.stringify(data, null, 2), 'utf8');
-  return { path: resolved, count: Object.keys(sessions).length };
-}
 
-/**
- * Export sessions to a simple plaintext format (one URL per line, sessions separated)
- */
-async function exportPlaintext(outputPath) {
-  const sessions = await loadSessions();
-  const lines = [];
-  for (const [name, session] of Object.entries(sessions)) {
-    lines.push(`# ${name}`);
-    (session.urls || []).forEach(url => lines.push(url));
-    lines.push('');
+  const format = options.format || 'json';
+
+  if (format === 'json') {
+    const json = JSON.stringify(exportData, null, 2);
+    const filePath = outputPath || path.resolve(process.cwd(), 'tabswitch-export.json');
+    fs.writeFileSync(filePath, json, 'utf8');
+    return filePath;
   }
-  const resolved = path.resolve(outputPath);
-  fs.writeFileSync(resolved, lines.join('\n'), 'utf8');
-  return { path: resolved, count: Object.keys(sessions).length };
+
+  throw new Error(`Unsupported export format: ${format}`);
 }
 
-module.exports = { exportSessions, exportPlaintext };
+module.exports = { exportSessions };

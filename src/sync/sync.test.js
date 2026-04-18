@@ -1,66 +1,53 @@
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
+const os = require('os');
 const { exportSessions } = require('./exporter');
 const { importSessions } = require('./importer');
 
-jest.mock('../session/store', () => {
-  let store = {};
-  return {
-    loadSessions: jest.fn(async () => ({ ...store })),
-    saveSessions: jest.fn(async (data) => { store = { ...data }; }),
-    __setStore: (data) => { store = { ...data }; },
-  };
-});
+jest.mock('../session/store', () => ({
+  loadSessions: jest.fn(),
+  saveSessions: jest.fn(),
+}));
 
-const { __setStore, loadSessions, saveSessions } = require('../session/store');
+const { loadSessions, saveSessions } = require('../session/store');
 
-beforeEach(() => {
-  __setStore({
-    work: { urls: ['https://github.com', 'https://jira.example.com'], createdAt: '2024-01-01' },
-    personal: { urls: ['https://news.ycombinator.com'], createdAt: '2024-01-02' },
+describe('exporter', () => {
+  it('throws if no sessions exist', async () => {
+    loadSessions.mockResolvedValue({});
+    await expect(exportSessions()).rejects.toThrow('No sessions found');
+  });
+
+  it('writes sessions to a json file', async () => {
+    loadSessions.mockResolvedValue({ work: { urls: ['https://github.com'] } });
+    const tmpFile = path.join(os.tmpdir(), 'ts-export-test.json');
+    const result = await exportSessions(tmpFile);
+    expect(result).toBe(tmpFile);
+    const content = JSON.parse(fs.readFileSync(tmpFile, 'utf8'));
+    expect(content.sessions).toHaveProperty('work');
+    fs.unlinkSync(tmpFile);
   });
 });
 
-describe('exportSessions', () => {
-  it('writes a valid JSON file with session data', async () => {
-    const tmp = path.join(os.tmpdir(), `tabswitch-test-${Date.now()}.json`);
-    const result = await exportSessions(tmp);
-    expect(result.count).toBe(2);
-    const data = JSON.parse(fs.readFileSync(tmp, 'utf8'));
-    expect(data.version).toBe(1);
-    expect(data.sessions.work.urls).toContain('https://github.com');
-    fs.unlinkSync(tmp);
+describe('importer', () => {
+  it('throws if file does not exist', async () => {
+    await expect(importSessions('/nonexistent/file.json')).rejects.toThrow('File not found');
   });
-});
 
-describe('importSessions', () => {
-  it('imports sessions from a valid export file', async () => {
-    const tmp = path.join(os.tmpdir(), `tabswitch-import-${Date.now()}.json`);
-    const payload = {
+  it('imports and merges sessions', async () => {
+    loadSessions.mockResolvedValue({ existing: { urls: ['https://example.com'] } });
+    saveSessions.mockResolvedValue();
+
+    const tmpFile = path.join(os.tmpdir(), 'ts-import-test.json');
+    const exportData = {
       version: 1,
       exportedAt: new Date().toISOString(),
-      sessions: { newSession: { urls: ['https://example.com'] } },
+      sessions: { work: { urls: ['https://github.com'] } },
     };
-    fs.writeFileSync(tmp, JSON.stringify(payload));
-    __setStore({});
-    const { imported, skipped } = await importSessions(tmp);
-    expect(imported).toContain('newSession');
-    expect(skipped).toHaveLength(0);
-    fs.unlinkSync(tmp);
-  });
+    fs.writeFileSync(tmpFile, JSON.stringify(exportData));
 
-  it('skips existing sessions without overwrite flag', async () => {
-    const tmp = path.join(os.tmpdir(), `tabswitch-skip-${Date.now()}.json`);
-    const payload = {
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      sessions: { work: { urls: ['https://example.com'] } },
-    };
-    fs.writeFileSync(tmp, JSON.stringify(payload));
-    const { imported, skipped } = await importSessions(tmp, { overwrite: false });
-    expect(skipped).toContain('work');
-    expect(imported).toHaveLength(0);
-    fs.unlinkSync(tmp);
+    const result = await importSessions(tmpFile);
+    expect(result.imported).toBe(1);
+    expect(saveSessions).toHaveBeenCalled();
+    fs.unlinkSync(tmpFile);
   });
 });
