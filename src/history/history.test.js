@@ -1,61 +1,65 @@
-const { recordOpen, getHistory, clearHistory, findInHistory } = require('./history');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
-jest.mock('../session/store', () => {
-  let store = {};
-  return {
-    loadSessions: jest.fn(async () => JSON.parse(JSON.stringify(store))),
-    saveSessions: jest.fn(async (data) => { store = JSON.parse(JSON.stringify(data)); }),
-    __reset: () => { store = {}; },
-  };
-});
+jest.mock('../session/store', () => ({
+  ensureDir: jest.fn().mockResolvedValue(undefined),
+  loadSessions: jest.fn(),
+  saveSessions: jest.fn()
+}));
 
-const storeModule = require('../session/store');
+const HISTORY_FILE = path.join(os.homedir(), '.tabswitch', 'history.json');
+
+jest.mock('fs', () => ({
+  ...jest.requireActual('fs'),
+  existsSync: jest.fn(),
+  readFileSync: jest.fn(),
+  writeFileSync: jest.fn()
+}));
+
+const { recordOpen, getHistory, clearHistory, getSessionHistory } = require('./history');
 
 beforeEach(() => {
-  storeModule.__reset();
   jest.clearAllMocks();
+  fs.existsSync.mockReturnValue(false);
 });
 
-test('recordOpen adds an entry to history', async () => {
-  const entry = await recordOpen('work', ['https://github.com', 'https://slack.com']);
+test('recordOpen adds entry to history', async () => {
+  fs.existsSync.mockReturnValue(false);
+  const entry = await recordOpen('work', ['https://github.com']);
   expect(entry.sessionName).toBe('work');
-  expect(entry.urls).toHaveLength(2);
+  expect(entry.urls).toEqual(['https://github.com']);
   expect(entry.openedAt).toBeDefined();
+  expect(fs.writeFileSync).toHaveBeenCalled();
 });
 
-test('getHistory returns entries in reverse chronological order', async () => {
-  await recordOpen('session-a', ['https://a.com']);
-  await recordOpen('session-b', ['https://b.com']);
+test('getHistory returns limited entries', async () => {
+  const mockData = Array.from({ length: 30 }, (_, i) => ({
+    sessionName: `session-${i}`,
+    urls: [],
+    openedAt: new Date().toISOString()
+  }));
+  fs.existsSync.mockReturnValue(true);
+  fs.readFileSync.mockReturnValue(JSON.stringify(mockData));
   const history = await getHistory(10);
-  expect(history[0].sessionName).toBe('session-b');
-  expect(history[1].sessionName).toBe('session-a');
+  expect(history).toHaveLength(10);
 });
 
-test('getHistory respects limit', async () => {
-  await recordOpen('s1', ['https://one.com']);
-  await recordOpen('s2', ['https://two.com']);
-  await recordOpen('s3', ['https://three.com']);
-  const history = await getHistory(2);
-  expect(history).toHaveLength(2);
-});
-
-test('clearHistory empties the history', async () => {
-  await recordOpen('work', ['https://github.com']);
+test('clearHistory empties history', async () => {
   await clearHistory();
-  const history = await getHistory();
-  expect(history).toHaveLength(0);
+  const written = JSON.parse(fs.writeFileSync.mock.calls[0][1]);
+  expect(written).toEqual([]);
 });
 
-test('findInHistory filters by session name', async () => {
-  await recordOpen('work', ['https://github.com']);
-  await recordOpen('personal', ['https://twitter.com']);
-  const results = await findInHistory('work');
-  expect(results).toHaveLength(1);
-  expect(results[0].sessionName).toBe('work');
-});
-
-test('findInHistory filters by url', async () => {
-  await recordOpen('misc', ['https://github.com', 'https://npmjs.com']);
-  const results = await findInHistory('github');
-  expect(results).toHaveLength(1);
+test('getSessionHistory filters by session name', async () => {
+  const mockData = [
+    { sessionName: 'work', urls: [], openedAt: '' },
+    { sessionName: 'personal', urls: [], openedAt: '' },
+    { sessionName: 'work', urls: [], openedAt: '' }
+  ];
+  fs.existsSync.mockReturnValue(true);
+  fs.readFileSync.mockReturnValue(JSON.stringify(mockData));
+  const result = await getSessionHistory('work');
+  expect(result).toHaveLength(2);
+  expect(result.every(e => e.sessionName === 'work')).toBe(true);
 });

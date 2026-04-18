@@ -1,50 +1,49 @@
-const { loadSessions, saveSessions } = require('../session/store');
+const path = require('path');
+const { loadSessions, saveSessions, ensureDir } = require('../session/store');
 
-const HISTORY_KEY = '__history__';
-const MAX_HISTORY = 50;
+const HISTORY_FILE = path.join(process.env.HOME || process.env.USERPROFILE, '.tabswitch', 'history.json');
 
-async function recordOpen(sessionName, urls) {
-  const sessions = await loadSessions();
-  if (!sessions[HISTORY_KEY]) {
-    sessions[HISTORY_KEY] = [];
+async function loadHistory() {
+  try {
+    await ensureDir();
+    const data = require('fs').existsSync(HISTORY_FILE)
+      ? JSON.parse(require('fs').readFileSync(HISTORY_FILE, 'utf8'))
+      : [];
+    return data;
+  } catch {
+    return [];
   }
-
-  const entry = {
-    sessionName,
-    urls,
-    openedAt: new Date().toISOString(),
-  };
-
-  sessions[HISTORY_KEY].unshift(entry);
-
-  if (sessions[HISTORY_KEY].length > MAX_HISTORY) {
-    sessions[HISTORY_KEY] = sessions[HISTORY_KEY].slice(0, MAX_HISTORY);
-  }
-
-  await saveSessions(sessions);
-  return entry;
 }
 
-async function getHistory(limit = 10) {
-  const sessions = await loadSessions();
-  const history = sessions[HISTORY_KEY] || [];
+async function saveHistory(history) {
+  await ensureDir();
+  require('fs').writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
+}
+
+async function recordOpen(sessionName, urls) {
+  const history = await loadHistory();
+  history.unshift({
+    sessionName,
+    urls,
+    openedAt: new Date().toISOString()
+  });
+  const trimmed = history.slice(0, 100);
+  await saveHistory(trimmed);
+  return trimmed[0];
+}
+
+async function getHistory(limit = 20) {
+  const history = await loadHistory();
   return history.slice(0, limit);
 }
 
 async function clearHistory() {
-  const sessions = await loadSessions();
-  sessions[HISTORY_KEY] = [];
-  await saveSessions(sessions);
+  await saveHistory([]);
 }
 
-async function findInHistory(query) {
-  const history = await getHistory(MAX_HISTORY);
-  const q = query.toLowerCase();
-  return history.filter(
-    (entry) =>
-      entry.sessionName.toLowerCase().includes(q) ||
-      entry.urls.some((url) => url.toLowerCase().includes(q))
-  );
+async function getSessionHistory(sessionName) {
+  const history = await loadHistory();
+  return history.filter(entry => entry.sessionName === sessionName);
 }
 
-module.exports = { recordOpen, getHistory, clearHistory, findInHistory };
+module.exports = { recordOpen, getHistory, clearHistory, getSessionHistory };
