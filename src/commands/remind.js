@@ -11,12 +11,16 @@ function registerRemindCommands(program) {
     .option('-i, --interval <minutes>', 'Reminder interval in minutes', '60')
     .option('-m, --max <count>', 'Max number of reminders', '5')
     .action(async (session, opts) => {
-      const reminder = createReminder(session, {
-        intervalMinutes: parseInt(opts.interval, 10),
-        maxReminders: parseInt(opts.max, 10),
-      });
-      await addReminder(reminder);
-      console.log(chalk.green(`Reminder set for session "${session}" every ${opts.interval} min.`));
+      try {
+        const reminder = createReminder(session, {
+          intervalMinutes: parseInt(opts.interval, 10),
+          maxReminders: parseInt(opts.max, 10),
+        });
+        await addReminder(reminder);
+        console.log(chalk.green(`Reminder set for session "${session}" every ${opts.interval} min.`));
+      } catch (err) {
+        console.error(chalk.red(`Failed to add reminder: ${err.message}`));
+      }
     });
 
   remind
