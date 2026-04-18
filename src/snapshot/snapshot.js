@@ -1,4 +1,4 @@
-const { saveSession } = require('../session/store');
+const { saveSession, loadSession } = require('../session/store');
 const { normalizeUrl } = require('../session/manager');
 const { addToHistory } = require('../history/history');
 
@@ -37,4 +37,15 @@ function diffSnapshots(snapshotA, snapshotB) {
   return { added, removed, common };
 }
 
-module.exports = { createSnapshot, diffSnapshots };
+/**
+ * Load a snapshot by name and return it, or throw if not found.
+ */
+function getSnapshot(name) {
+  if (!name || typeof name !== 'string') throw new Error('Snapshot name is required');
+  const snapshot = loadSession(name);
+  if (!snapshot) throw new Error(`Snapshot "${name}" not found`);
+  if (snapshot.type !== 'snapshot') throw new Error(`"${name}" is not a snapshot`);
+  return snapshot;
+}
+
+module.exports = { createSnapshot, diffSnapshots, getSnapshot };
