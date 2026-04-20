@@ -1,85 +1,83 @@
-const { normalizeUrl } = require('../session/manager');
-
 /**
- * Check if two URLs are considered duplicates after normalization.
+ * Normalize a URL for comparison (lowercase, strip trailing slash)
+ * @param {string} url
+ * @returns {string}
  */
-function areDuplicateUrls(urlA, urlB) {
-  return normalizeUrl(urlA) === normalizeUrl(urlB);
+function normalizeUrl(url) {
+  return url.trim().toLowerCase().replace(/\/$/, '');
 }
 
 /**
- * Find duplicate URLs within a single session's tab list.
- * Returns an array of { url, indices } objects.
+ * Check if two URLs are considered duplicates.
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function areDuplicateUrls(a, b) {
+  return normalizeUrl(a) === normalizeUrl(b);
+}
+
+/**
+ * Find duplicate URLs within a single session.
+ * @param {object} session - session object with a `tabs` array of URL strings
+ * @returns {Array<{url: string, indices: number[]}>}
  */
 function findDuplicatesInSession(session) {
+  const tabs = session.tabs || [];
   const seen = new Map();
-  const duplicates = [];
 
-  (session.tabs || []).forEach((tab, index) => {
-    const normalized = normalizeUrl(tab.url);
-    if (seen.has(normalized)) {
-      seen.get(normalized).indices.push(index);
-    } else {
-      seen.set(normalized, { url: tab.url, indices: [index] });
+  tabs.forEach((url, idx) => {
+    const key = normalizeUrl(url);
+    if (!seen.has(key)) {
+      seen.set(key, { url, indices: [] });
     }
+    seen.get(key).indices.push(idx);
   });
 
-  for (const entry of seen.values()) {
-    if (entry.indices.length > 1) {
-      duplicates.push(entry);
-    }
-  }
-
-  return duplicates;
+  return Array.from(seen.values()).filter((entry) => entry.indices.length > 1);
 }
 
 /**
- * Find sessions across all sessions that share at least one duplicate URL.
- * Returns a map of normalizedUrl -> [sessionName, ...]
+ * Find duplicates across all sessions.
+ * @param {object} sessions - map of sessionName -> session
+ * @returns {object} map of sessionName -> duplicate entries
  */
 function findDuplicatesAcrossSessions(sessions) {
-  const urlToSessions = new Map();
-
-  for (const session of sessions) {
-    const seen = new Set();
-    for (const tab of session.tabs || []) {
-      const normalized = normalizeUrl(tab.url);
-      if (!seen.has(normalized)) {
-        seen.add(normalized);
-        if (!urlToSessions.has(normalized)) {
-          urlToSessions.set(normalized, []);
-        }
-        urlToSessions.get(normalized).push(session.name);
-      }
+  const results = {};
+  for (const [name, session] of Object.entries(sessions)) {
+    const dupes = findDuplicatesInSession(session);
+    if (dupes.length > 0) {
+      results[name] = dupes;
     }
   }
-
-  const result = {};
-  for (const [url, sessionNames] of urlToSessions.entries()) {
-    if (sessionNames.length > 1) {
-      result[url] = sessionNames;
-    }
-  }
-
-  return result;
+  return results;
 }
 
 /**
- * Deduplicate tabs within a session, keeping the first occurrence.
+ * Remove duplicate URLs from a session, keeping the first occurrence.
+ * @param {object} session
+ * @returns {{ cleaned: object, removed: string[] }}
  */
 function deduplicateSession(session) {
+  const tabs = session.tabs || [];
   const seen = new Set();
+  const removed = [];
   const uniqueTabs = [];
 
-  for (const tab of session.tabs || []) {
-    const normalized = normalizeUrl(tab.url);
-    if (!seen.has(normalized)) {
-      seen.add(normalized);
-      uniqueTabs.push(tab);
+  for (const url of tabs) {
+    const key = normalizeUrl(url);
+    if (seen.has(key)) {
+      removed.push(url);
+    } else {
+      seen.add(key);
+      uniqueTabs.push(url);
     }
   }
 
-  return { ...session, tabs: uniqueTabs };
+  return {
+    cleaned: { ...session, tabs: uniqueTabs },
+    removed,
+  };
 }
 
 module.exports = {
