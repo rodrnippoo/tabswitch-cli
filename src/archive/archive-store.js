@@ -12,7 +12,11 @@ function ensureDir() {
 function loadArchive() {
   ensureDir();
   if (!fs.existsSync(ARCHIVE_FILE)) return [];
-  return JSON.parse(fs.readFileSync(ARCHIVE_FILE, 'utf-8'));
+  try {
+    return JSON.parse(fs.readFileSync(ARCHIVE_FILE, 'utf-8'));
+  } catch (err) {
+    throw new Error(`Failed to parse archive file: ${err.message}`);
+  }
 }
 
 function saveArchive(sessions) {
