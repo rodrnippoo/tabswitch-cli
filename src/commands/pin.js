@@ -38,8 +38,9 @@ function registerPinCommands(program) {
         console.log('No pinned sessions.');
         return;
       }
-      pinned.forEach(s => {
-        console.log(`[${s.id}] ${s.name || '(unnamed)'} — pinned at ${s.pinnedAt}`);
+      pinned.forEach((s, i) => {
+        const pinnedAt = new Date(s.pinnedAt).toLocaleString();
+        console.log(`${i + 1}. [${s.id}] ${s.name || '(unnamed)'} — pinned at ${pinnedAt}`);
       });
     });
 }
