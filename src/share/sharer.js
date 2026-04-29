@@ -13,6 +13,9 @@ function createShareToken(session) {
 }
 
 function setExpiry(shareToken, hours) {
+  if (typeof hours !== 'number' || hours <= 0) {
+    throw new Error('hours must be a positive number');
+  }
   const expiry = new Date();
   expiry.setHours(expiry.getHours() + hours);
   return { ...shareToken, expiresAt: expiry.toISOString() };
@@ -32,7 +35,11 @@ function decodeShareLink(link) {
   const url = new URL(link);
   const payload = url.searchParams.get('data');
   if (!payload) throw new Error('Invalid share link: missing data param');
-  return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  try {
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+  } catch {
+    throw new Error('Invalid share link: could not decode payload');
+  }
 }
 
 function formatShareText(shareToken) {
